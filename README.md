@@ -1,16 +1,39 @@
-# React + Vite
+# 💈 Barbearia Top - Frontend Web
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Interface web moderna para sistema de agendamento de barbearia, com áreas exclusivas para clientes e profissionais.
 
-Currently, two official plugins are available:
+## 🚀 Tecnologias Utilizadas
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **React.js (Vite)**
+- **Context API** (Gerenciamento de Estado Global de Autenticação)
+- **Axios** (Integração com API REST)
+- **React Router Dom** (Navegação e Rotas Privadas)
+- **CSS Modules / Styled Components** (Design System Responsivo)
 
-## React Compiler
+## 📱 Funcionalidades
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 👤 Área do Cliente
+- Cadastro e Login.
+- Visualização de barbeiros e serviços disponíveis.
+- Calendário dinâmico mostrando apenas horários vagos.
+- Painel "Meus Cortes" com histórico e opção de cancelamento.
+  
+  <img width="1907" height="817" alt="image" src="https://github.com/user-attachments/assets/09614f66-5d04-4e8f-9a17-12edf4a50ccb" />
 
-## Expanding the ESLint configuration
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### ✂️ Área do Barbeiro (Dashboard)
+- Configuração de serviços (Preço, Duração).
+- Definição de grade de horários (Início, Fim, Dias da semana).
+- Visualização da agenda do dia e futuros agendamentos.
+
+## 🔧 Instalação e Execução
+1. Certifique-se de que o Backend está rodando.
+2. Instale as dependências:
+   ```bash
+   npm install
+3. Rode o projeto:
+   ```bash
+   npm run dev
+4. Acesse http://localhost:5173 .
+
+Desenvolvido por *Matheus Santos*.
