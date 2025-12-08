@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom"; // Importamos useNavigate para redirecionar
+import { Link, useNavigate } from "react-router-dom";
 import api from "../services/api";
+import { getUsuarioDoToken } from "../utils/authUtils";
 
 function Agendamento() {
-    // --- ESTADOS ---
     const [barbeiros, setBarbeiros] = useState([]);
     const [barbeiroSelecionado, setBarbeiroSelecionado] = useState("");
     
@@ -14,27 +14,34 @@ function Agendamento() {
     const [horariosDisponiveis, setHorariosDisponiveis] = useState([]);
     const [horarioSelecionado, setHorarioSelecionado] = useState("");
 
-    // ESTADO PROVISÓRIO PARA CLIENTE (Até termos login)
-    const [clienteId, setClienteId] = useState("");
-
     const [erro, setErro] = useState(null);
     const [aviso, setAviso] = useState(null);
-    const [sucesso, setSucesso] = useState(false);
+    
+    const navigate = useNavigate();
+    const usuario = getUsuarioDoToken(); // <--- Pega o usuário logado
 
-    const navigate = useNavigate(); // Hook para navegar programaticamente
+    // Validação de Segurança ao abrir a tela
+    useEffect(() => {
+        if (!usuario) {
+            alert("Você precisa estar logado para agendar.");
+            navigate("/login");
+        } else if (usuario.role !== "CLIENTE") {
+            alert("Apenas clientes podem fazer agendamentos.");
+            navigate("/dashboard"); // Se for barbeiro, chuta pro dashboard
+        }
+    }, [usuario, navigate]);
 
-    // 1. Carrega Barbeiros
+    // 1. Carrega Barbeiros (Assume que existe GET /barbeiros público)
     useEffect(() => {
         api.get("/barbeiros")
             .then((res) => setBarbeiros(res.data))
-            .catch(() => setErro("Erro ao carregar barbeiros."));
+            .catch(() => setErro("Erro ao carregar lista de barbeiros."));
     }, []);
 
-    // 2. Carrega Serviços
+    // 2. Carrega Serviços quando seleciona Barbeiro
     useEffect(() => {
         setServicos([]);
         setServicoSelecionado("");
-        // Não limpamos a data propositalmente para facilitar trocas
         
         if (barbeiroSelecionado) {
             api.get(`/barbeiros/${barbeiroSelecionado}/servicos`)
@@ -50,6 +57,13 @@ function Agendamento() {
         setAviso(null);
 
         if (barbeiroSelecionado && servicoSelecionado && dataSelecionada) {
+            // Verifica se a data é hoje ou futuro
+            const hoje = new Date().toISOString().split('T')[0];
+            if(dataSelecionada < hoje) {
+                setAviso("Selecione uma data futura.");
+                return;
+            }
+
             api.get("/agendamentos/disponibilidade", {
                 params: {
                     barbeiroId: barbeiroSelecionado,
@@ -60,150 +74,223 @@ function Agendamento() {
             .then((response) => {
                 setHorariosDisponiveis(response.data);
                 if (response.data.length === 0) {
-                    setAviso("Nenhum horário disponível para esta data.");
+                    setAviso("Agenda cheia ou barbeiro não trabalha neste dia.");
                 }
             })
             .catch((error) => {
-                if (error.response && error.response.data) {
-                    setAviso(error.response.data);
-                } else {
-                    setAviso("Erro ao verificar horários.");
-                }
+                console.error(error);
+                setAviso("Não foi possível carregar os horários.");
             });
         }
     }, [dataSelecionada, servicoSelecionado, barbeiroSelecionado]);
 
-    // --- FUNÇÃO FINAL: ENVIAR AGENDAMENTO ---
+    // --- ENVIAR AGENDAMENTO ---
     const handleAgendar = () => {
-        if (!clienteId) {
-            alert("Por favor, digite o ID do cliente.");
+        if (!usuario?.id) {
+            alert("Erro de autenticação. Faça login novamente.");
             return;
         }
 
-        // Monta a data no formato ISO: "2025-10-20T14:30:00"
-        const dataHoraInicio = `${dataSelecionada}T${horarioSelecionado}`;
+        // --- CORREÇÃO AQUI ---
+        // Verifica se o horário já tem segundos (ex: "13:30:00" tem 8 caracteres)
+        // Se tiver apenas "13:30" (5 caracteres), nós adicionamos ":00"
+        let horaFormatada = horarioSelecionado;
+        
+        if (horaFormatada.length === 5) {
+            horaFormatada = horaFormatada + ":00";
+        }
+        
+        // Monta a string final no padrão ISO 8601 estrito
+        const dataHoraInicio = `${dataSelecionada}T${horaFormatada}`;
+        // ---------------------
 
         const payload = {
             barbeiroId: Number(barbeiroSelecionado),
-            clienteId: Number(clienteId),
+            clienteId: Number(usuario.id),
             servicoId: Number(servicoSelecionado),
             dataHoraInicio: dataHoraInicio
         };
 
+        console.log("Payload Enviado:", payload); // Para conferir no console
+
         api.post("/agendamentos", payload)
             .then(() => {
-                setSucesso(true);
                 alert("✅ Agendamento realizado com sucesso!");
-                navigate("/"); // Volta para a home
+                navigate("/meus-agendamentos"); 
             })
             .catch((error) => {
-                console.error("Erro ao agendar", error);
-                // Tenta pegar a mensagem de erro da nossa RegraDeNegocioException
-                const mensagem = error.response?.data || "Erro desconhecido ao agendar.";
-                alert("❌ Erro: " + mensagem);
+                console.error("Erro completo:", error);
+                let msg = "Erro desconhecido.";
+                if (error.response?.data) {
+                    if (typeof error.response.data === 'object') {
+                        msg = error.response.data.message || JSON.stringify(error.response.data);
+                    } else {
+                        msg = error.response.data;
+                    }
+                }
+                alert("❌ Erro ao agendar: " + msg);
             });
     };
 
     return (
-        <div style={{ maxWidth: "600px", margin: "0 auto", padding: "20px", fontFamily: "Arial" }}>
-            <h1>📅 Agendar Horário</h1>
-            
-            {erro && <div style={{ color: "white", background: "red", padding: "10px" }}>{erro}</div>}
-
-            {/* PASSO 1: BARBEIRO */}
-            <div style={styles.card}>
-                <h3>1. Profissional</h3>
-                <select style={styles.input} value={barbeiroSelecionado} onChange={(e) => setBarbeiroSelecionado(e.target.value)}>
-                    <option value="">Selecione...</option>
-                    {barbeiros.map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
-                </select>
+        <div style={{ maxWidth: "800px", margin: "40px auto", padding: "0 20px", fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: "30px" }}>
+                <h1 style={{ color: "#274a70", margin: 0 }}>📅 Novo Agendamento</h1>
+                <Link to="/meus-agendamentos" style={{ color: "#007bff", textDecoration: "none", fontWeight: "bold" }}>
+                    Ver meus horários &rarr;
+                </Link>
             </div>
 
-            {/* PASSO 2: SERVIÇO */}
-            {barbeiroSelecionado && (
-                <div style={styles.card}>
-                    <h3>2. Serviço</h3>
-                    <select style={styles.input} value={servicoSelecionado} onChange={(e) => setServicoSelecionado(e.target.value)}>
-                        <option value="">Selecione...</option>
-                        {servicos.map(s => <option key={s.id} value={s.id}>{s.nomeServico} - R$ {s.preco}</option>)}
-                    </select>
-                </div>
-            )}
+            {erro && <div style={styles.errorAlert}>{erro}</div>}
 
-            {/* PASSO 3: DATA */}
-            {servicoSelecionado && (
+            {/* Container Principal */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                
+                {/* PASSO 1: BARBEIRO */}
                 <div style={styles.card}>
-                    <h3>3. Data</h3>
-                    <input type="date" style={styles.input} value={dataSelecionada} onChange={(e) => setDataSelecionada(e.target.value)} />
-                </div>
-            )}
-
-            {/* PASSO 4: HORÁRIO */}
-            {dataSelecionada && (
-                <div style={styles.card}>
-                    <h3>4. Horário</h3>
-                    {aviso && <p style={{ color: "orange" }}>⚠️ {aviso}</p>}
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-                        {horariosDisponiveis.map((item, index) => (
-                            <button
-                                key={index}
-                                onClick={() => setHorarioSelecionado(item.horario)}
-                                style={{
-                                    padding: "10px",
-                                    backgroundColor: horarioSelecionado === item.horario ? "#4CAF50" : "#f0f0f0",
-                                    color: horarioSelecionado === item.horario ? "white" : "black",
-                                    border: "1px solid #ccc",
-                                    borderRadius: "5px",
-                                    cursor: "pointer"
-                                }}
-                            >
-                                {item.horario}
-                            </button>
-                        ))}
+                    <div style={styles.stepBadge}>1</div>
+                    <div style={{ flex: 1 }}>
+                        <label style={styles.label}>Escolha o Profissional</label>
+                        <select style={styles.input} value={barbeiroSelecionado} onChange={(e) => setBarbeiroSelecionado(e.target.value)}>
+                            <option value="">Selecione um barbeiro...</option>
+                            {barbeiros.map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
+                        </select>
                     </div>
                 </div>
-            )}
 
-            {/* PASSO 5: IDENTIFICAÇÃO DO CLIENTE (Provisório) */}
-            {horarioSelecionado && (
-                <div style={{ ...styles.card, border: "2px solid #4CAF50" }}>
-                    <h3>5. Seus Dados</h3>
-                    <p>Digite seu ID de cliente (Use "1" para teste):</p>
-                    <input 
-                        type="number" 
-                        placeholder="Ex: 1"
-                        style={styles.input}
-                        value={clienteId}
-                        onChange={(e) => setClienteId(e.target.value)}
-                    />
-                    
-                    <button 
-                        onClick={handleAgendar}
-                        style={{
-                            width: "100%",
-                            padding: "15px",
-                            backgroundColor: "#4CAF50",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "5px",
-                            fontSize: "18px",
-                            marginTop: "15px",
-                            cursor: "pointer"
-                        }}
-                    >
-                        ✅ Confirmar Agendamento
-                    </button>
-                </div>
-            )}
+                {/* PASSO 2: SERVIÇO */}
+                {barbeiroSelecionado && (
+                    <div style={styles.card}>
+                        <div style={styles.stepBadge}>2</div>
+                        <div style={{ flex: 1 }}>
+                            <label style={styles.label}>Escolha o Serviço</label>
+                            <select style={styles.input} value={servicoSelecionado} onChange={(e) => setServicoSelecionado(e.target.value)}>
+                                <option value="">Selecione o serviço...</option>
+                                {servicos.map(s => <option key={s.id} value={s.id}>{s.nomeServico} - R$ {s.preco}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                )}
 
-            <Link to="/"><button style={{marginTop: 20, padding: 10}}>⬅ Cancelar</button></Link>
+                {/* PASSO 3: DATA */}
+                {servicoSelecionado && (
+                    <div style={styles.card}>
+                        <div style={styles.stepBadge}>3</div>
+                        <div style={{ flex: 1 }}>
+                            <label style={styles.label}>Escolha a Data</label>
+                            <input type="date" style={styles.input} value={dataSelecionada} onChange={(e) => setDataSelecionada(e.target.value)} />
+                        </div>
+                    </div>
+                )}
+
+                {/* PASSO 4: HORÁRIO */}
+                {dataSelecionada && (
+                    <div style={styles.card}>
+                        <div style={styles.stepBadge}>4</div>
+                        <div style={{ flex: 1 }}>
+                            <label style={styles.label}>Horários Disponíveis</label>
+                            {aviso && <p style={{ color: "#d9534f", fontWeight: "bold", marginTop: 5 }}>⚠️ {aviso}</p>}
+                            
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))", gap: "10px", marginTop: "15px" }}>
+                                {horariosDisponiveis.map((item, index) => (
+                                    <button
+                                        key={index}
+                                        onClick={() => setHorarioSelecionado(item.horario)}
+                                        style={{
+                                            ...styles.timeButton,
+                                            backgroundColor: horarioSelecionado === item.horario ? "#274a70" : "#f0f2f5",
+                                            color: horarioSelecionado === item.horario ? "white" : "#333",
+                                            border: horarioSelecionado === item.horario ? "2px solid #274a70" : "1px solid #ddd",
+                                        }}
+                                    >
+                                        {item.horario}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* PASSO 5: CONFIRMAÇÃO */}
+                {horarioSelecionado && (
+                    <div style={{ marginTop: 20 }}>
+                        <button onClick={handleAgendar} style={styles.confirmButton}>
+                            ✅ Confirmar Agendamento
+                        </button>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
 
 const styles = {
-    card: { marginBottom: "20px", padding: "15px", border: "1px solid #ddd", borderRadius: "8px" },
-    input: { width: "100%", padding: "10px", fontSize: "16px", boxSizing: "border-box" }
+    card: {
+        backgroundColor: "white",
+        padding: "20px",
+        borderRadius: "12px",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+        border: "1px solid #eef0f2",
+        display: "flex",
+        gap: "15px",
+        alignItems: "flex-start"
+    },
+    stepBadge: {
+        backgroundColor: "#274a70",
+        color: "white",
+        width: "30px",
+        height: "30px",
+        borderRadius: "50%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontWeight: "bold",
+        fontSize: "14px",
+        flexShrink: 0
+    },
+    label: {
+        display: "block",
+        marginBottom: "8px",
+        fontWeight: "600",
+        color: "#484a4d"
+    },
+    input: {
+        width: "100%",
+        padding: "12px",
+        fontSize: "16px",
+        borderRadius: "8px",
+        border: "1px solid #ced4da",
+        outline: "none",
+        backgroundColor: "#fcfcfc"
+    },
+    timeButton: {
+        padding: "10px",
+        borderRadius: "8px",
+        cursor: "pointer",
+        fontWeight: "600",
+        fontSize: "14px",
+        transition: "all 0.2s"
+    },
+    confirmButton: {
+        width: "100%",
+        padding: "18px",
+        backgroundColor: "#28a745",
+        color: "white",
+        border: "none",
+        borderRadius: "8px",
+        fontSize: "18px",
+        fontWeight: "bold",
+        cursor: "pointer",
+        boxShadow: "0 4px 6px rgba(40, 167, 69, 0.2)",
+        transition: "background 0.2s"
+    },
+    errorAlert: {
+        color: "white",
+        background: "#dc3545",
+        padding: "15px",
+        borderRadius: "8px",
+        marginBottom: "20px"
+    }
 };
 
 export default Agendamento;

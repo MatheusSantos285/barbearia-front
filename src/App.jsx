@@ -1,12 +1,12 @@
-import { BrowserRouter } from "react-router-dom";
 import AppRoutes from "./routes/AppRoutes";
+import Navbar from "./components/Navbar"; // <--- 1. Importe a Navbar
 
 function App() {
   return (
-    // O BrowserRouter deve envolver toda a aplicação para as rotas funcionarem
-    <BrowserRouter>
-      <AppRoutes />
-    </BrowserRouter>
+    <div> 
+        <Navbar /> {/* <--- 3. Coloque ela aqui, ANTES das rotas */}
+        <AppRoutes />
+    </div>
   );
 }
 
